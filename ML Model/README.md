@@ -143,3 +143,7 @@ curl -X POST http://127.0.0.1:5000/predict \
 "route_complexity": 0.2,
 "air_traffic_density": 0.1
 }'
+
+
+Deployed ML Server Base url
+https://flight-risk-prediction-system-using-ml.onrender.com
