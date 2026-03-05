@@ -116,5 +116,30 @@ Example curl Request:
 
 curl -X POST http://127.0.0.1:5000/predict \
 -H "Content-Type: application/json" \
--d '{ "flight_duration":220,"flight_phase":2,"departure_elevation":500,"arrival_elevation":100,"total_onboard":180,"cargo_weight":12000,"airline":1,"aircraft_type":0,"aircraft_age":12,"last_maintenance_hours":200,"engine_hours_since_overhaul":4000,"pilot_experience":5000,"copilot_experience":2000,"crew_count":6,"season":3,"weather_condition":2,"visibility_km":3,"wind_speed_knots":40,"wind_direction":180,"temperature_c":-2,"precipitation_mm":10,"turbulence_severity":2,"route_complexity":0.7,"air_traffic_density":0.8 }'
-
+-H "x-api-key: supersecretkey123" \
+-d '{
+"flight_duration": 220,
+"flight_phase": "cruise",
+"departure_elevation": 500,
+"arrival_elevation": 100,
+"total_onboard": 180,
+"cargo_weight": 12000,
+"airline": "Delta",
+"aircraft_type": "A320",
+"aircraft_age": 10,
+"last_maintenance_hours": 100,
+"engine_hours_since_overhaul": 4000,
+"pilot_experience": 8000,
+"copilot_experience": 4000,
+"crew_count": 6,
+"season": "winter",
+"weather_condition": "clear",
+"visibility_km": 10,
+"wind_speed_knots": 10,
+"wind_direction": 180,
+"temperature_c": -2,
+"precipitation_mm": 10,
+"turbulence_severity": "severe",
+"route_complexity": 0.2,
+"air_traffic_density": 0.1
+}'

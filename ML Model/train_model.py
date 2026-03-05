@@ -67,6 +67,12 @@ joblib.dump(model, "flight_risk_model.pkl")
 
 print("Model saved successfully!")
 
+# ----- Save Encoders (NEW) -----
+
+joblib.dump(encoders, "encoders.pkl")
+
+print("Encoders saved successfully!")
+
 # ----- Example Prediction -----
 
 sample = pd.DataFrame([{
