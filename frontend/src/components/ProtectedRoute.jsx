@@ -1,25 +1,20 @@
 import { useContext } from 'react';
-import { Navigate } from 'react-router-dom';
-import { AuthContext } from '../context/AuthContext';
+import { Navigate, useLocation } from 'react-router-dom';
+import { AuthContext } from '../context/authContextValue';
 
+/**
+ * Session state is resolved synchronously from the stored token, so there is no
+ * loading gate here — an authenticated user never sees a flash of the login
+ * screen, and an unauthenticated one is redirected immediately.
+ */
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useContext(AuthContext);
+  const { user } = useContext(AuthContext);
+  const location = useLocation();
 
-  // While checking the token in local storage, show a loading state
-  // to prevent the app from instantly flashing to the login screen
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <p className="text-xl font-semibold text-gray-600">Verifying session...</p>
-      </div>
-    );
-  }
-
-  // If the loading is finished and there is no user, bounce them to login
   if (!user) {
-    return <Navigate to="/login" replace />;
+    // Remember where they were headed so the login page can send them back.
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // If a user exists, render the component they requested
   return children;
 }

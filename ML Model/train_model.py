@@ -1,37 +1,34 @@
-import pandas as pd
-import numpy as np
 import joblib
+import pandas as pd
+
+import matplotlib
+matplotlib.use("Agg")  # headless: training runs on servers and in CI, not on a desktop
 import matplotlib.pyplot as plt
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
+
+from risk_schema import CATEGORICAL_COLS, FEATURE_ORDER
 
 # Load dataset
 data = pd.read_csv("flight_data.csv")
 
 # ----- Encode categorical columns -----
 
-categorical_cols = [
-    "flight_phase",
-    "airline",
-    "aircraft_type",
-    "season",
-    "weather_condition",
-    "turbulence_severity"
-]
-
 encoders = {}
 
-for col in categorical_cols:
+for col in CATEGORICAL_COLS:
     encoder = LabelEncoder()
     data[col] = encoder.fit_transform(data[col])
     encoders[col] = encoder
 
 # ----- Features and target -----
+# Column order is pinned by risk_schema so the serving path can build a frame
+# in exactly the order the model was fitted on.
 
-X = data.drop("risk", axis=1)
+X = data[FEATURE_ORDER]
 y = data["risk"]
 
 # ----- Train/Test Split -----
@@ -40,7 +37,8 @@ X_train, X_test, y_train, y_test = train_test_split(
     X,
     y,
     test_size=0.2,
-    random_state=42
+    random_state=42,
+    stratify=y
 )
 
 # ----- Train Model -----
@@ -56,21 +54,19 @@ model.fit(X_train, y_train)
 # ----- Evaluate Model -----
 
 predictions = model.predict(X_test)
+probabilities = model.predict_proba(X_test)[:, 1]
 
-accuracy = accuracy_score(y_test, predictions)
+print("Model Accuracy:", accuracy_score(y_test, predictions))
+print("ROC AUC:", roc_auc_score(y_test, probabilities))
+print()
+print(classification_report(y_test, predictions, target_names=["nominal", "at risk"]))
 
-print("Model Accuracy:", accuracy)
-
-# ----- Save Model -----
+# ----- Save Model & Encoders -----
 
 joblib.dump(model, "flight_risk_model.pkl")
-
 print("Model saved successfully!")
 
-# ----- Save Encoders (NEW) -----
-
 joblib.dump(encoders, "encoders.pkl")
-
 print("Encoders saved successfully!")
 
 # ----- Example Prediction -----
@@ -100,22 +96,18 @@ sample = pd.DataFrame([{
     "turbulence_severity": encoders["turbulence_severity"].transform(["moderate"])[0],
     "route_complexity": 0.7,
     "air_traffic_density": 0.8
-}])
+}])[FEATURE_ORDER]
 
-prediction = model.predict(sample)
-
-print("Prediction for sample flight:", prediction)
+print("Prediction for sample flight:", model.predict(sample))
 
 # ----- Feature Importance -----
 
-importances = model.feature_importances_
-features = X.columns
+importances = pd.Series(model.feature_importances_, index=FEATURE_ORDER).sort_values()
 
-plt.figure(figsize=(10,8))
-plt.barh(features, importances)
-
+plt.figure(figsize=(10, 8))
+plt.barh(importances.index, importances.values)
 plt.xlabel("Importance")
 plt.title("Feature Importance for Flight Risk")
-
 plt.tight_layout()
-plt.show()
+plt.savefig("feature_importance.png", dpi=140)
+print("Feature importance chart written to feature_importance.png")

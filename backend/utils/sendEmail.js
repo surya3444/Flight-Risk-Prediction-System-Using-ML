@@ -1,28 +1,44 @@
 const { Resend } = require('resend');
 
-// Initialize Resend with your API key from the .env file
-const resend = new Resend(process.env.RESEND_API_KEY);
+const FROM = process.env.MAIL_FROM || 'AeroSafe OCC <onboarding@resend.dev>';
 
-const sendEmail = async (email, subject, text) => {
-  try {
-    const { data, error } = await resend.emails.send({
-      // Resend provides this testing domain out of the box so you don't need to buy a custom domain yet
-      from: 'FlightRisk AI <onboarding@resend.dev>', 
-      to: email,
-      subject: subject,
-      text: text,
-    });
+// Built on first use, not at import time: the Resend constructor throws when
+// the key is missing, and a missing email key must degrade one channel, not
+// take the whole server down at startup.
+let client = null;
 
-    if (error) {
-      console.error("Resend API Error:", error);
-      throw new Error(error.message);
-    }
-    
-    console.log("Email sent successfully via HTTP API to:", email);
-  } catch (error) {
-    console.error("Email sending failed:", error.message);
-    throw new Error("Email could not be sent");
+function getClient() {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not configured');
   }
+  if (!client) client = new Resend(process.env.RESEND_API_KEY);
+  return client;
+}
+
+/**
+ * Sends a transactional email.
+ *
+ * @param {string} email   recipient
+ * @param {string} subject
+ * @param {string} text    plain-text body (always sent — some OCC terminals are text-only)
+ * @param {string} [html]  optional rich body
+ */
+const sendEmail = async (email, subject, text, html) => {
+  const { data, error } = await getClient().emails.send({
+    from: FROM,
+    to: email,
+    subject,
+    text,
+    ...(html ? { html } : {}),
+  });
+
+  if (error) {
+    console.error('Resend API Error:', error);
+    throw new Error(error.message || 'Email could not be sent');
+  }
+
+  console.log('Email sent to:', email);
+  return data;
 };
 
 module.exports = sendEmail;

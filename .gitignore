@@ -12,3 +12,7 @@ backend/.env
 frontend/dist/
 backend/dist/
 .DS_Store
+# Python
+__pycache__/
+*.pyc
+venv/

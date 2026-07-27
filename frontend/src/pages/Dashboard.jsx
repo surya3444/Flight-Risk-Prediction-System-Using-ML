@@ -1,60 +1,78 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
-import { AuthContext } from '../context/AuthContext';
-import api from '../services/api';
+import { Link } from 'react-router-dom';
+import { predictApi, errorMessage } from '../services/api';
+import { useOps } from '../context/opsContextValue';
+import StartMonitoringDialog from '../components/StartMonitoringDialog';
+import {
+  Page,
+  Card,
+  CardHeader,
+  Button,
+  Banner,
+  SeverityBadge,
+  RiskGauge,
+  FactorList,
+  RuleList,
+  inputClass,
+  labelClass,
+} from '../components/ui';
+import { severityMeta, pct } from '../lib/risk';
 
 // Curated list of global and regional aviation hubs
 const CITIES = [
-  "Ahmedabad", "Amsterdam", "Bengaluru", "Chandigarh", "Chennai", "Chicago", 
-  "Coimbatore", "Delhi", "Dubai", "Frankfurt", "Gadag", "Goa", "Guwahati", 
-  "Hong Kong", "Hubballi", "Hyderabad", "Jaipur", "Kochi", "Kolkata", 
-  "London", "Los Angeles", "Lucknow", "Mangaluru", "Mumbai", "Mysuru", 
-  "New York", "Paris", "Pune", "San Francisco", "Seoul", "Singapore", 
-  "Sydney", "Thiruvananthapuram", "Tokyo", "Toronto"
+  'Ahmedabad', 'Amsterdam', 'Bengaluru', 'Chandigarh', 'Chennai', 'Chicago',
+  'Coimbatore', 'Delhi', 'Dubai', 'Frankfurt', 'Gadag', 'Goa', 'Guwahati',
+  'Hong Kong', 'Hubballi', 'Hyderabad', 'Jaipur', 'Kochi', 'Kolkata',
+  'London', 'Los Angeles', 'Lucknow', 'Mangaluru', 'Mumbai', 'Mysuru',
+  'New York', 'Paris', 'Pune', 'San Francisco', 'Seoul', 'Singapore',
+  'Sydney', 'Thiruvananthapuram', 'Tokyo', 'Toronto',
 ].sort();
 
-// Custom Searchable Dropdown Component
-const SearchableCityInput = ({ value, onChange, placeholder, buttonNode }) => {
+/**
+ * Fully controlled — the typed text *is* the value. An earlier version mirrored
+ * the prop into local state and synced it back with an effect, which meant the
+ * two could disagree for a render.
+ */
+const SearchableCityInput = ({ value, onChange, placeholder, buttonNode, id }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState(value);
 
-  // Sync internal search state if value changes externally
-  useEffect(() => setSearch(value), [value]);
-
-  const filtered = CITIES.filter(c => c.toLowerCase().includes(search.toLowerCase()));
+  const filtered = CITIES.filter((c) => c.toLowerCase().includes(value.toLowerCase()));
 
   return (
     <div className="relative w-full">
-      <div className="flex w-full mt-1 rounded-lg shadow-sm">
+      <div className="mt-1 flex w-full rounded-lg shadow-sm">
         <input
+          id={id}
           type="text"
           placeholder={placeholder}
-          value={search}
+          value={value}
           onChange={(e) => {
-            setSearch(e.target.value);
             onChange(e.target.value);
             setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
+          // Delay the close so a click on an option registers first.
           onBlur={() => setTimeout(() => setIsOpen(false), 200)}
-          className={`w-full p-3 bg-slate-900/50 border border-slate-700 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all ${buttonNode ? 'rounded-l-lg border-r-0' : 'rounded-lg'}`}
+          className={`w-full border border-slate-700 bg-slate-900/50 p-3 text-slate-200 placeholder-slate-500 transition-all focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none ${
+            buttonNode ? 'rounded-l-lg border-r-0' : 'rounded-lg'
+          }`}
         />
         {buttonNode}
       </div>
 
-      {/* Dropdown Menu */}
       {isOpen && filtered.length > 0 && (
-        <ul className="absolute z-50 w-full mt-2 overflow-y-auto border rounded-lg shadow-2xl bg-slate-800/95 backdrop-blur-xl border-slate-700 max-h-60">
-          {filtered.map(city => (
+        <ul className="absolute z-50 mt-2 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/95 shadow-2xl backdrop-blur-xl">
+          {filtered.map((city) => (
             <li
               key={city}
-              // Using onMouseDown instead of onClick prevents the input's onBlur from firing first and hiding the menu
+              // onMouseDown fires before the input's onBlur, so the menu is
+              // still open when the choice lands.
               onMouseDown={() => {
-                setSearch(city);
                 onChange(city);
                 setIsOpen(false);
               }}
-              className="p-3 transition-colors cursor-pointer text-slate-300 hover:bg-indigo-600 hover:text-white border-b border-slate-700/50 last:border-0"
+              className="cursor-pointer border-b border-slate-700/50 p-3 text-slate-300 transition-colors last:border-0 hover:bg-indigo-600 hover:text-white"
             >
               {city}
             </li>
@@ -65,25 +83,35 @@ const SearchableCityInput = ({ value, onChange, placeholder, buttonNode }) => {
   );
 };
 
+/**
+ * Single-flight risk assessment.
+ *
+ * The result panel is deliberately more than a number: the score, the model's
+ * own reasons for it, the escalation rules it tripped, and what the system did
+ * about it. A dispatcher who cannot see why will not trust the figure — and a
+ * figure nobody trusts changes no decisions.
+ */
 export default function Dashboard() {
-  const { user } = useContext(AuthContext);
+  const { thresholds, refresh: refreshOps } = useOps();
+
   const [loading, setLoading] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [predictionResult, setPredictionResult] = useState(null);
-  
-  const [mode, setMode] = useState('simple'); 
+  const [notice, setNotice] = useState(null);
+  const [result, setResult] = useState(null);
+  const [monitorOpen, setMonitorOpen] = useState(false);
+
+  const [mode, setMode] = useState('simple');
   const [departureCity, setDepartureCity] = useState('');
   const [arrivalCity, setArrivalCity] = useState('');
 
   const [formData, setFormData] = useState({
-    flight_duration: 120, flight_phase: 'cruise', departure_elevation: 500, arrival_elevation: 500,
+    flight_duration: 120, flight_phase: 'takeoff', departure_elevation: 500, arrival_elevation: 500,
     total_onboard: 150, cargo_weight: 8000, airline: 'Indigo', aircraft_type: 'A320',
     aircraft_age: 8, last_maintenance_hours: 120, engine_hours_since_overhaul: 3000,
     pilot_experience: 6000, copilot_experience: 3500, crew_count: 6, season: 'summer',
     weather_condition: 'clear', visibility_km: 10, wind_speed_knots: 5, wind_direction: 90,
     temperature_c: 25, precipitation_mm: 0, turbulence_severity: 'none', route_complexity: 0.3,
-    air_traffic_density: 0.4
+    air_traffic_density: 0.4,
   });
 
   const handleChange = (e) => {
@@ -93,44 +121,49 @@ export default function Dashboard() {
 
   const autoFillWeather = async () => {
     if (!departureCity) {
-      setError("Please select a Departure City to fetch weather.");
+      setNotice({ tone: 'warning', text: 'Choose a departure city before syncing weather.' });
       return;
     }
+
     setWeatherLoading(true);
-    setError(null);
+    setNotice(null);
+
     try {
       const apiKey = import.meta.env.VITE_OPENWEATHER_KEY;
-      const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${departureCity}&units=metric&appid=${apiKey}`);
-      const weatherData = response.data;
+      const response = await axios.get(
+        `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(departureCity)}&units=metric&appid=${apiKey}`
+      );
+      const weather = response.data;
 
-      let mlCondition = "clear";
-      const owmMain = weatherData.weather[0].main.toLowerCase();
-      if (owmMain.includes("rain") || owmMain.includes("drizzle")) mlCondition = "rain";
-      if (owmMain.includes("thunderstorm") || owmMain.includes("extreme")) mlCondition = "storm";
-      if (owmMain.includes("snow")) mlCondition = "snow";
+      let condition = 'clear';
+      const main = weather.weather[0].main.toLowerCase();
+      if (main.includes('rain') || main.includes('drizzle')) condition = 'rain';
+      if (main.includes('thunderstorm') || main.includes('extreme')) condition = 'storm';
+      if (main.includes('snow')) condition = 'snow';
 
       const month = new Date().getMonth();
-      let currentSeason = "summer";
-      if (month >= 2 && month <= 4) currentSeason = "spring";
-      if (month >= 8 && month <= 10) currentSeason = "autumn";
-      if (month === 11 || month <= 1) currentSeason = "winter";
+      let season = 'summer';
+      if (month >= 2 && month <= 4) season = 'spring';
+      if (month >= 8 && month <= 10) season = 'autumn';
+      if (month === 11 || month <= 1) season = 'winter';
+
+      const windKnots = Math.round(weather.wind.speed * 1.94384);
 
       setFormData((prev) => ({
         ...prev,
-        temperature_c: Math.round(weatherData.main.temp),
-        visibility_km: weatherData.visibility / 1000,
-        wind_speed_knots: Math.round(weatherData.wind.speed * 1.94384),
-        wind_direction: weatherData.wind.deg,
-        precipitation_mm: weatherData.rain ? weatherData.rain['1h'] : 0,
-        weather_condition: mlCondition,
-        season: currentSeason,
-        turbulence_severity: weatherData.wind.speed > 10 ? 'moderate' : 'none'
+        temperature_c: Math.round(weather.main.temp),
+        visibility_km: weather.visibility != null ? weather.visibility / 1000 : 10,
+        wind_speed_knots: windKnots,
+        wind_direction: weather.wind.deg ?? 0,
+        precipitation_mm: weather.rain?.['1h'] ?? 0,
+        weather_condition: condition,
+        season,
+        turbulence_severity: windKnots > 45 || condition === 'storm' ? 'severe' : windKnots > 28 ? 'moderate' : windKnots > 14 ? 'light' : 'none',
       }));
 
-      setError(`✅ Environmental data synced for ${weatherData.name}`);
-      setTimeout(() => setError(null), 3000);
-    } catch (err) {
-      setError("Failed to sync telemetry. Verify region or API status.");
+      setNotice({ tone: 'success', text: `Conditions synced from ${weather.name}.` });
+    } catch {
+      setNotice({ tone: 'error', text: 'Could not fetch weather. Check the city name or the API key.' });
     } finally {
       setWeatherLoading(false);
     }
@@ -139,151 +172,357 @@ export default function Dashboard() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
-    setPredictionResult(null);
+    setNotice(null);
+    setResult(null);
+
     try {
-      const response = await api.post('/predict', formData);
-      setPredictionResult(response.data.data.predictionResult);
+      const response = await predictApi.run({
+        ...formData,
+        departure_city: departureCity || undefined,
+        arrival_city: arrivalCity || undefined,
+      });
+      setResult(response);
+      // An assessment can raise an incident, so the shared feed is now stale.
+      if (response.incident) refreshOps();
     } catch (err) {
-      setError(err.response?.data?.error || 'Analysis failed. Please try again.');
+      setNotice({ tone: 'error', text: errorMessage(err, 'Assessment failed. Please try again.') });
     } finally {
       setLoading(false);
     }
   };
 
-  const inputStyle = "w-full p-3 mt-1 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all";
-  const labelStyle = "block text-xs font-medium tracking-wider text-slate-400 uppercase";
+  const assessment = result?.assessment;
+  const probability = result?.data?.predictionResult?.risk_probability;
+  const severity = assessment?.severity || 'none';
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] text-slate-200 p-4 md:p-8 relative overflow-hidden">
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none"></div>
-
-      <div className="relative z-10 max-w-6xl mx-auto">
-        <div className="flex flex-col items-start justify-between mb-10 md:flex-row md:items-end">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
-              Flight Telemetry Analysis
-            </h1>
-            <p className="mt-2 text-slate-400">Predictive risk modeling powered by live environmental data.</p>
-          </div>
-          
-          <div className="flex p-1 mt-6 border rounded-lg bg-slate-800/50 border-slate-700 backdrop-blur-md md:mt-0">
-            <button onClick={() => setMode('simple')} className={`px-5 py-2 text-sm font-semibold rounded-md transition-all ${mode === 'simple' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Autopilot</button>
-            <button onClick={() => setMode('advanced')} className={`px-5 py-2 text-sm font-semibold rounded-md transition-all ${mode === 'advanced' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>Manual Override</button>
-          </div>
+    <Page
+      title="Flight risk assessment"
+      subtitle="Score a single flight against the model, see why, and hand it to continuous monitoring if it warrants watching."
+      actions={
+        <div className="flex rounded-lg border border-slate-700 bg-slate-800/50 p-1 backdrop-blur-md">
+          {[['simple', 'Autopilot'], ['advanced', 'Manual override']].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`rounded-md px-5 py-2 text-sm font-semibold transition-all ${
+                mode === key ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+      }
+    >
+      {notice && <Banner tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Banner>}
 
-        {error && (
-          <div className={`p-4 mb-8 rounded-lg backdrop-blur-md border ${error.includes('✅') ? 'bg-green-900/20 border-green-500/50 text-green-400' : 'bg-red-900/20 border-red-500/50 text-red-400'}`}>
-            <div className="flex items-center gap-3"><span className="text-lg">{error.includes('✅') ? '⚡' : '⚠️'}</span><p className="font-medium tracking-wide">{error}</p></div>
-          </div>
-        )}
+      {result && (
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <Card className="px-6 py-5">
+            <RiskGauge probability={probability} thresholds={thresholds} label="Assessed risk" />
 
-        {predictionResult && (
-          <div className={`p-8 mb-8 rounded-2xl backdrop-blur-xl border ${predictionResult.risk_prediction === 1 ? 'bg-red-900/10 border-red-500/50 shadow-[0_0_30px_rgba(239,68,68,0.15)]' : 'bg-emerald-900/10 border-emerald-500/50 shadow-[0_0_30px_rgba(16,185,129,0.15)]'}`}>
-            <h2 className="text-sm font-bold tracking-widest text-slate-400 uppercase">Analysis Complete</h2>
-            <div className="flex flex-col gap-8 mt-4 md:flex-row md:items-center">
-              <div><span className="block text-sm text-slate-500">Predicted Risk Profile</span><span className={`text-4xl font-black tracking-tight ${predictionResult.risk_prediction === 1 ? 'text-red-400' : 'text-emerald-400'}`}>{predictionResult.risk_prediction === 1 ? 'CRITICAL RISK' : 'NOMINAL'}</span></div>
-              <div className="hidden w-px h-12 md:block bg-slate-700"></div>
-              <div><span className="block text-sm text-slate-500">Confidence / Probability</span><span className="text-4xl font-black tracking-tight text-white">{(predictionResult.risk_probability * 100).toFixed(1)}%</span></div>
+            <div className="mt-5 flex items-center gap-3 border-t border-slate-700/50 pt-4">
+              <SeverityBadge severity={severity} size="lg" />
+              <span className="text-sm text-slate-400">{severityMeta(severity).blurb}</span>
             </div>
-          </div>
-        )}
 
-        <form onSubmit={handleSubmit} className="p-8 border shadow-2xl bg-slate-800/40 backdrop-blur-xl border-slate-700/50 rounded-2xl">
-          
+            <div className="mt-5">
+              <Button variant="primary" className="w-full" onClick={() => setMonitorOpen(true)}>
+                Put this flight under continuous monitoring
+              </Button>
+              <p className="mt-2 text-xs text-slate-500">
+                This assessment is a single moment. Monitoring re-scores it against fresh weather
+                every few minutes and escalates on its own.
+              </p>
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Why the model scored it this way"
+              hint="Measured by re-scoring the flight with each input set to nominal, one at a time."
+            />
+            <div className="px-6 py-5">
+              <FactorList factors={assessment?.contributingFactors} />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader title="Escalation" hint={result.incident ? 'An incident was raised.' : 'No incident raised.'} />
+            <div className="px-6 py-5">
+              <RuleList rules={assessment?.triggeredRules} />
+
+              {result.incident && (
+                <div className="mt-5 rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-sm text-slate-300">{result.incident.reference}</span>
+                    <SeverityBadge severity={result.incident.severity} />
+                  </div>
+                  <ul className="mt-3 space-y-1 text-xs">
+                    {result.incident.notifications?.map((n, i) => (
+                      <li key={i} className="flex justify-between gap-3">
+                        <span className="text-slate-500">{n.channel}</span>
+                        <span style={{ color: n.status === 'sent' ? '#0ca30c' : n.status === 'failed' ? '#d03b3b' : '#898781' }}>
+                          {n.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/incidents" className="mt-3 inline-block text-xs font-semibold text-indigo-400 hover:text-indigo-300">
+                    Open the incident log →
+                  </Link>
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        <Card className="p-8 shadow-2xl">
           {mode === 'simple' && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                
-                {/* REPLACED WITH SEARCHABLE DROPDOWN */}
                 <div>
-                  <label className={labelStyle}>Origin Node (City)</label>
-                  <SearchableCityInput 
-                    placeholder="Search city (e.g., Bengaluru)"
+                  <label className={labelClass} htmlFor="dep-city">Departure city</label>
+                  <SearchableCityInput
+                    id="dep-city"
+                    placeholder="Search city (e.g. Bengaluru)"
                     value={departureCity}
                     onChange={setDepartureCity}
                     buttonNode={
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={autoFillWeather}
                         disabled={weatherLoading}
-                        className="px-6 font-semibold text-white transition-all bg-indigo-600 border border-indigo-500 rounded-r-lg hover:bg-indigo-500 hover:shadow-[0_0_15px_rgba(79,70,229,0.5)] whitespace-nowrap"
+                        className="rounded-r-lg border border-indigo-500 bg-indigo-600 px-6 font-semibold whitespace-nowrap text-white transition-all hover:bg-indigo-500 hover:shadow-[0_0_15px_rgba(79,70,229,0.5)] disabled:opacity-60"
                       >
-                        {weatherLoading ? 'Syncing...' : 'Sync Live Data'}
+                        {weatherLoading ? 'Syncing…' : 'Sync weather'}
                       </button>
                     }
                   />
                 </div>
-                
-                {/* REPLACED WITH SEARCHABLE DROPDOWN */}
+
                 <div>
-                  <label className={labelStyle}>Destination Node</label>
-                  <SearchableCityInput 
-                    placeholder="Search city (e.g., Dubai)"
+                  <label className={labelClass} htmlFor="arr-city">Arrival city</label>
+                  <SearchableCityInput
+                    id="arr-city"
+                    placeholder="Search city (e.g. Dubai)"
                     value={arrivalCity}
                     onChange={setArrivalCity}
                   />
                 </div>
 
                 <div>
-                  <label className={labelStyle}>Carrier</label>
-                  <select name="airline" value={formData.airline} onChange={handleChange} className={inputStyle}>
-                    {["Delta", "United", "Emirates", "Lufthansa", "Indigo"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}
+                  <label className={labelClass} htmlFor="airline-simple">Operator</label>
+                  <select id="airline-simple" name="airline" value={formData.airline} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['Delta', 'United', 'Emirates', 'Lufthansa', 'Indigo'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className={labelStyle}>Block Time (Mins)</label>
-                  <input type="number" name="flight_duration" value={formData.flight_duration} onChange={handleChange} className={inputStyle} />
+                  <label className={labelClass} htmlFor="phase-simple">Flight phase</label>
+                  <select id="phase-simple" name="flight_phase" value={formData.flight_phase} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['takeoff', 'climb', 'cruise', 'descent', 'landing'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className={labelClass} htmlFor="duration-simple">Block time (mins)</label>
+                  <input id="duration-simple" type="number" name="flight_duration" value={formData.flight_duration} onChange={handleChange} className={`${inputClass} mt-1`} />
+                </div>
+
+                <div>
+                  <label className={labelClass} htmlFor="onboard-simple">Souls on board</label>
+                  <input id="onboard-simple" type="number" name="total_onboard" value={formData.total_onboard} onChange={handleChange} className={`${inputClass} mt-1`} />
                 </div>
               </div>
-              
-              <div className="p-4 text-sm border rounded-lg bg-indigo-900/20 border-indigo-500/30 text-indigo-200">
-                <strong className="text-indigo-400">Autopilot Active:</strong> Environmental parameters are automatically synced with global weather nodes. Fleet averages applied for technical metrics.
+
+              <div className="rounded-lg border border-indigo-500/30 bg-indigo-900/20 p-4 text-sm text-indigo-200">
+                <strong className="text-indigo-400">Autopilot:</strong> environmental parameters come
+                from live weather at the departure city. Fleet averages are applied to the technical
+                metrics — switch to manual override to set them yourself.
               </div>
             </div>
           )}
 
           {mode === 'advanced' && (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-              <div className="space-y-5 lg:pr-8 lg:border-r border-slate-700/50">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-700"><div className="w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)]"></div><h3 className="font-semibold text-slate-200">Flight Route</h3></div>
-                <div><label className={labelStyle}>Duration (mins)</label><input type="number" name="flight_duration" value={formData.flight_duration} onChange={handleChange} className={inputStyle} /></div>
-                <div><label className={labelStyle}>Phase</label><select name="flight_phase" value={formData.flight_phase} onChange={handleChange} className={inputStyle}>{["takeoff", "climb", "cruise", "descent", "landing"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div>
-                <div><label className={labelStyle}>Origin Elev (ft)</label><input type="number" name="departure_elevation" value={formData.departure_elevation} onChange={handleChange} className={inputStyle} /></div>
-                <div><label className={labelStyle}>Dest Elev (ft)</label><input type="number" name="arrival_elevation" value={formData.arrival_elevation} onChange={handleChange} className={inputStyle} /></div>
-                <div><label className={labelStyle}>Complexity Map</label><input type="number" step="0.1" name="route_complexity" value={formData.route_complexity} onChange={handleChange} className={inputStyle} /></div>
-                <div><label className={labelStyle}>Traffic Density</label><input type="number" step="0.1" name="air_traffic_density" value={formData.air_traffic_density} onChange={handleChange} className={inputStyle} /></div>
-              </div>
+              <fieldset className="space-y-5 border-slate-700/50 lg:border-r lg:pr-8">
+                <legend className="flex items-center gap-2 border-b border-slate-700 pb-3">
+                  <span className="h-2 w-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)]" aria-hidden />
+                  <span className="font-semibold text-slate-200">Route</span>
+                </legend>
+                {[
+                  ['flight_duration', 'Duration (mins)'],
+                  ['departure_elevation', 'Origin elevation (ft)'],
+                  ['arrival_elevation', 'Destination elevation (ft)'],
+                ].map(([name, label]) => (
+                  <div key={name}>
+                    <label className={labelClass} htmlFor={name}>{label}</label>
+                    <input id={name} type="number" name={name} value={formData[name]} onChange={handleChange} className={`${inputClass} mt-1`} />
+                  </div>
+                ))}
+                <div>
+                  <label className={labelClass} htmlFor="flight_phase">Phase</label>
+                  <select id="flight_phase" name="flight_phase" value={formData.flight_phase} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['takeoff', 'climb', 'cruise', 'descent', 'landing'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
+                  </select>
+                </div>
+                {[
+                  ['route_complexity', 'Route complexity (0–1)'],
+                  ['air_traffic_density', 'Traffic density (0–1)'],
+                ].map(([name, label]) => (
+                  <div key={name}>
+                    <label className={labelClass} htmlFor={name}>{label}</label>
+                    <input id={name} type="number" step="0.1" name={name} value={formData[name]} onChange={handleChange} className={`${inputClass} mt-1`} />
+                  </div>
+                ))}
+              </fieldset>
 
-              <div className="space-y-5 lg:pr-8 lg:border-r border-slate-700/50">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-700"><div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div><h3 className="font-semibold text-slate-200">Aircraft & Crew</h3></div>
-                <div><label className={labelStyle}>Carrier</label><select name="airline" value={formData.airline} onChange={handleChange} className={inputStyle}>{["Delta", "United", "Emirates", "Lufthansa", "Indigo"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div>
-                <div><label className={labelStyle}>Airframe</label><select name="aircraft_type" value={formData.aircraft_type} onChange={handleChange} className={inputStyle}>{["A320", "B737", "B787", "A350"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div>
-                <div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>Age (Yrs)</label><input type="number" name="aircraft_age" value={formData.aircraft_age} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Crew</label><input type="number" name="crew_count" value={formData.crew_count} onChange={handleChange} className={inputStyle} /></div></div>
-                <div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>Souls</label><input type="number" name="total_onboard" value={formData.total_onboard} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Payload (kg)</label><input type="number" name="cargo_weight" value={formData.cargo_weight} onChange={handleChange} className={inputStyle} /></div></div>
-                <div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>Pilot (hrs)</label><input type="number" name="pilot_experience" value={formData.pilot_experience} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Co-Pilot</label><input type="number" name="copilot_experience" value={formData.copilot_experience} onChange={handleChange} className={inputStyle} /></div></div>
-              </div>
+              <fieldset className="space-y-5 border-slate-700/50 lg:border-r lg:pr-8">
+                <legend className="flex items-center gap-2 border-b border-slate-700 pb-3">
+                  <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" aria-hidden />
+                  <span className="font-semibold text-slate-200">Aircraft &amp; crew</span>
+                </legend>
+                <div>
+                  <label className={labelClass} htmlFor="airline">Operator</label>
+                  <select id="airline" name="airline" value={formData.airline} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['Delta', 'United', 'Emirates', 'Lufthansa', 'Indigo'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass} htmlFor="aircraft_type">Airframe</label>
+                  <select id="aircraft_type" name="aircraft_type" value={formData.aircraft_type} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['A320', 'B737', 'B787', 'A350'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ['aircraft_age', 'Age (yrs)'],
+                    ['crew_count', 'Crew'],
+                    ['total_onboard', 'Souls'],
+                    ['cargo_weight', 'Payload (kg)'],
+                    ['pilot_experience', 'Captain (hrs)'],
+                    ['copilot_experience', 'F/O (hrs)'],
+                    ['last_maintenance_hours', 'Since maint. (hrs)'],
+                    ['engine_hours_since_overhaul', 'Engine (hrs)'],
+                  ].map(([name, label]) => (
+                    <div key={name}>
+                      <label className={labelClass} htmlFor={name}>{label}</label>
+                      <input id={name} type="number" name={name} value={formData[name]} onChange={handleChange} className={`${inputClass} mt-1`} />
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
 
-              <div className="space-y-5">
-                <div className="flex items-center gap-2 pb-3 border-b border-slate-700"><div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div><h3 className="font-semibold text-slate-200">Environment</h3></div>
-                <div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>Season</label><select name="season" value={formData.season} onChange={handleChange} className={inputStyle}>{["spring", "summer", "autumn", "winter"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div><div><label className={labelStyle}>Weather</label><select name="weather_condition" value={formData.weather_condition} onChange={handleChange} className={inputStyle}>{["clear", "rain", "storm", "snow"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div></div>
-                <div><label className={labelStyle}>Turbulence</label><select name="turbulence_severity" value={formData.turbulence_severity} onChange={handleChange} className={inputStyle}>{["none", "light", "moderate", "severe"].map(opt => <option key={opt} value={opt} className="bg-slate-800">{opt}</option>)}</select></div>
-                <div className="grid grid-cols-2 gap-3"><div><label className={labelStyle}>Temp (°C)</label><input type="number" name="temperature_c" value={formData.temperature_c} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Precip (mm)</label><input type="number" name="precipitation_mm" value={formData.precipitation_mm} onChange={handleChange} className={inputStyle} /></div></div>
-                <div className="grid grid-cols-3 gap-3"><div><label className={labelStyle}>Wind (kts)</label><input type="number" name="wind_speed_knots" value={formData.wind_speed_knots} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Dir (°)</label><input type="number" name="wind_direction" value={formData.wind_direction} onChange={handleChange} className={inputStyle} /></div><div><label className={labelStyle}>Vis. (km)</label><input type="number" name="visibility_km" value={formData.visibility_km} onChange={handleChange} className={inputStyle} /></div></div>
-              </div>
+              <fieldset className="space-y-5">
+                <legend className="flex items-center gap-2 border-b border-slate-700 pb-3">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" aria-hidden />
+                  <span className="font-semibold text-slate-200">Environment</span>
+                </legend>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass} htmlFor="season">Season</label>
+                    <select id="season" name="season" value={formData.season} onChange={handleChange} className={`${inputClass} mt-1`}>
+                      {['spring', 'summer', 'autumn', 'winter'].map((o) => (
+                        <option key={o} value={o} className="bg-slate-800">{o}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass} htmlFor="weather_condition">Weather</label>
+                    <select id="weather_condition" name="weather_condition" value={formData.weather_condition} onChange={handleChange} className={`${inputClass} mt-1`}>
+                      {['clear', 'rain', 'storm', 'snow'].map((o) => (
+                        <option key={o} value={o} className="bg-slate-800">{o}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass} htmlFor="turbulence_severity">Turbulence</label>
+                  <select id="turbulence_severity" name="turbulence_severity" value={formData.turbulence_severity} onChange={handleChange} className={`${inputClass} mt-1`}>
+                    {['none', 'light', 'moderate', 'severe'].map((o) => (
+                      <option key={o} value={o} className="bg-slate-800">{o}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ['temperature_c', 'Temp (°C)'],
+                    ['precipitation_mm', 'Precip (mm)'],
+                    ['wind_speed_knots', 'Wind (kt)'],
+                    ['wind_direction', 'Direction (°)'],
+                    ['visibility_km', 'Visibility (km)'],
+                  ].map(([name, label]) => (
+                    <div key={name}>
+                      <label className={labelClass} htmlFor={name}>{label}</label>
+                      <input id={name} type="number" name={name} value={formData[name]} onChange={handleChange} className={`${inputClass} mt-1`} />
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
             </div>
           )}
 
-          <div className="pt-8 mt-10 border-t border-slate-700/50">
-            <button type="submit" disabled={loading} className={`w-full py-4 px-6 text-lg font-bold tracking-wide text-white transition-all rounded-xl shadow-lg border border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${loading ? 'bg-indigo-800/50 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 hover:shadow-[0_0_25px_rgba(79,70,229,0.5)]'}`}>
-              {loading ? 'Processing Neural Network...' : 'Run Risk Analysis Model'}
+          <div className="mt-10 border-t border-slate-700/50 pt-8">
+            <button
+              type="submit"
+              disabled={loading}
+              className={`w-full rounded-xl border border-indigo-500/50 px-6 py-4 text-lg font-bold tracking-wide text-white shadow-lg transition-all focus:ring-2 focus:ring-indigo-500 focus:outline-none ${
+                loading
+                  ? 'cursor-not-allowed bg-indigo-800/50'
+                  : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 hover:shadow-[0_0_25px_rgba(79,70,229,0.5)]'
+              }`}
+            >
+              {loading ? 'Scoring…' : 'Run risk assessment'}
             </button>
+            <p className="mt-3 text-center text-xs text-slate-500">
+              Assessments above {pct(thresholds?.highRisk ?? 0.7, 0)}, or in a critical phase, or in
+              adverse weather, are escalated to airline operations automatically.
+            </p>
           </div>
-        </form>
-      </div>
-    </div>
+        </Card>
+      </form>
+
+      <StartMonitoringDialog
+        open={monitorOpen}
+        onClose={() => setMonitorOpen(false)}
+        prefill={{
+          departureCity,
+          arrivalCity,
+          flight_duration: formData.flight_duration,
+          departure_elevation: formData.departure_elevation,
+          arrival_elevation: formData.arrival_elevation,
+          total_onboard: formData.total_onboard,
+          cargo_weight: formData.cargo_weight,
+          airline: formData.airline,
+          aircraft_type: formData.aircraft_type,
+          aircraft_age: formData.aircraft_age,
+          last_maintenance_hours: formData.last_maintenance_hours,
+          engine_hours_since_overhaul: formData.engine_hours_since_overhaul,
+          pilot_experience: formData.pilot_experience,
+          copilot_experience: formData.copilot_experience,
+          crew_count: formData.crew_count,
+          route_complexity: formData.route_complexity,
+          air_traffic_density: formData.air_traffic_density,
+        }}
+        onCreated={() => {
+          setNotice({ tone: 'success', text: 'Flight is now under continuous monitoring.' });
+          refreshOps();
+        }}
+      />
+    </Page>
   );
 }

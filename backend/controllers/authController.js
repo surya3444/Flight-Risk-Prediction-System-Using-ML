@@ -63,7 +63,9 @@ exports.registerUser = async (req, res) => {
     await Otp.deleteMany({ email });
 
     // Generate JWT and log them in
-    const payload = { user: { id: user.id } };
+    // username/email travel in the token so the UI can identify the operator
+    // without an extra round trip — and so an incident acknowledgement has a name.
+    const payload = { user: { id: user.id, username: user.username, email: user.email } };
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });
@@ -91,7 +93,9 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid Credentials' });
     }
 
-    const payload = { user: { id: user.id } };
+    // username/email travel in the token so the UI can identify the operator
+    // without an extra round trip — and so an incident acknowledgement has a name.
+    const payload = { user: { id: user.id, username: user.username, email: user.email } };
     jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' }, (err, token) => {
       if (err) throw err;
       res.json({ token });
