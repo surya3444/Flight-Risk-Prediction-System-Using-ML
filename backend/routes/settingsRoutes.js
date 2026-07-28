@@ -8,5 +8,6 @@ router.use(authMiddleware);
 router.get('/alerts', controller.getAlertSettings);
 router.put('/alerts', controller.updateAlertSettings);
 router.post('/alerts/test', controller.testAlertRouting);
+router.post('/alerts/verify-smtp', controller.verifySmtp);
 
 module.exports = router;

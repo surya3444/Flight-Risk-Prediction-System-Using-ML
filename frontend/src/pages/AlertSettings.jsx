@@ -22,6 +22,7 @@ export default function AlertSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [notice, setNotice] = useState(null);
 
   useEffect(() => {
@@ -56,6 +57,27 @@ export default function AlertSettings() {
       setNotice({ tone: 'error', text: errorMessage(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Proves the mailbox authenticates. Kept separate from the drill because a
+   * bad Gmail App Password is by far the most common failure, and catching it
+   * should not cost a send against the daily quota.
+   */
+  const verifySmtp = async () => {
+    setVerifying(true);
+    setNotice(null);
+    try {
+      const response = await settingsApi.verifySmtp();
+      setNotice({
+        tone: 'success',
+        text: `Mail connection OK — authenticated as ${response.data.mailbox} via ${response.data.host}:${response.data.port}.`,
+      });
+    } catch (err) {
+      setNotice({ tone: 'error', text: errorMessage(err, 'Mail connection failed.') });
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -131,10 +153,21 @@ export default function AlertSettings() {
 
         {(!readiness?.emailGatewayConfigured || (form.smsEnabled && !readiness?.smsGatewayConfigured)) && (
           <div className="border-t border-slate-700/50 px-6 py-3 text-xs text-amber-400">
-            {!readiness?.emailGatewayConfigured && 'Email gateway is not configured on the server (RESEND_API_KEY). '}
-            {form.smsEnabled && !readiness?.smsGatewayConfigured && 'SMS gateway is not configured on the server (TWILIO_* variables).'}
+            {!readiness?.emailGatewayConfigured &&
+              'Gmail SMTP is not configured on the server (GMAIL_USER and GMAIL_APP_PASSWORD). '}
+            {form.smsEnabled && !readiness?.smsGatewayConfigured &&
+              'SMS gateway is not configured on the server (TWILIO_* variables).'}
           </div>
         )}
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-slate-700/50 px-6 py-3">
+          <Button onClick={verifySmtp} disabled={verifying} type="button">
+            {verifying ? 'Checking…' : 'Test mail connection'}
+          </Button>
+          <span className="text-xs text-slate-500">
+            Authenticates against Gmail without sending anything — it does not touch your daily send quota.
+          </span>
+        </div>
       </Card>
 
       <form onSubmit={save}>

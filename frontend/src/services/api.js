@@ -57,6 +57,7 @@ export const settingsApi = {
   get: () => api.get('/settings/alerts').then((r) => r.data),
   update: (body) => api.put('/settings/alerts', body).then((r) => r.data),
   test: (severity) => api.post('/settings/alerts/test', { severity }).then((r) => r.data),
+  verifySmtp: () => api.post('/settings/alerts/verify-smtp').then((r) => r.data),
 };
 
 export const predictApi = {

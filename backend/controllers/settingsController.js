@@ -1,4 +1,4 @@
-const AlertSettings = require('../models/AlertSettings');
+const sendEmail = require('../utils/sendEmail');
 const escalationEngine = require('../services/escalationEngine');
 const notificationService = require('../services/notificationService');
 const { SEVERITY } = require('../config/riskPolicy');
@@ -100,6 +100,26 @@ exports.testAlertRouting = async (req, res) => {
 };
 
 /**
+ * POST /api/settings/alerts/verify-smtp — opens and closes an SMTP connection
+ * without sending anything.
+ *
+ * Separate from the drill on purpose: this proves the mailbox authenticates,
+ * which is the thing that actually breaks with Gmail App Passwords, and it
+ * costs nothing against the daily send quota.
+ */
+exports.verifySmtp = async (req, res) => {
+  const result = await sendEmail.verify();
+
+  res.status(result.ok ? 200 : 400).json({
+    success: result.ok,
+    data: result.ok
+      ? { host: result.host, port: result.port, mailbox: result.user }
+      : null,
+    error: result.ok ? null : result.error,
+  });
+};
+
+/**
  * Which escalation channels would actually reach someone right now. Surfaced in
  * the UI so an operator can see the gap before an incident finds it for them.
  */
@@ -112,7 +132,7 @@ function readiness(settings) {
     smsGatewayConfigured: Boolean(
       process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER
     ),
-    emailGatewayConfigured: Boolean(process.env.RESEND_API_KEY),
+    emailGatewayConfigured: sendEmail.isConfigured(),
   };
 }
 

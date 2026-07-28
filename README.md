@@ -25,7 +25,7 @@ React (Vite)  ──►  Express + MongoDB  ──►  Flask + RandomForest
   Incidents         monitoring scheduler
   Alert routing     notification fan-out
                           │
-                          ├──► Resend      (dispatcher / duty manager email)
+                          ├──► Gmail SMTP  (dispatcher / duty manager email)
                           ├──► Twilio      (duty manager SMS, emergency only)
                           ├──► OCC webhook (JSON push to an existing dashboard)
                           └──► OpenWeather (live conditions, server-side)
@@ -92,8 +92,21 @@ npm install && npm run dev        # :5173
 - **`OPENWEATHER_API_KEY` (backend)** — required. The scheduler fetches weather
   server-side; without it, monitored flights fall back to their last known
   conditions and every snapshot is flagged `stale` in the UI.
-- **`RESEND_API_KEY`** — without it the email channel reports `failed` and is
-  logged as such. The monitor keeps running.
+- **`GMAIL_USER` / `GMAIL_APP_PASSWORD`** — email goes out over Gmail's SMTP
+  relay (`smtp.gmail.com:587`, STARTTLS). `GMAIL_APP_PASSWORD` is a
+  **16-character App Password** from
+  [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords),
+  **not** the account password — Google stopped accepting those for SMTP in May
+  2022, and 2-Step Verification has to be on before the page will issue one.
+  Without these the email channel reports `failed` and is logged as such; the
+  monitor keeps running. Alert routing has a **Test mail connection** button
+  that authenticates without sending, so a bad password is caught without
+  spending a send.
+
+  Sending from a real Gmail mailbox is deliberate while there is no owned
+  domain: the mail is already SPF/DKIM-aligned by Google, so it does not land in
+  spam the way mail from an unauthenticated custom domain does. The trade-off is
+  the free quota — roughly **500 recipients per day**.
 - **`TWILIO_*`** — optional. Unset means the SMS channel reports `skipped`.
 
 No missing credential takes the server down: a channel that cannot deliver is
@@ -138,6 +151,7 @@ tool at all.
 | `POST` | `/api/incidents/:id/renotify` | Re-send after a channel failure |
 | `GET`/`PUT` | `/api/settings/alerts` | Alert routing |
 | `POST` | `/api/settings/alerts/test` | Fire a labelled drill down every channel |
+| `POST` | `/api/settings/alerts/verify-smtp` | Authenticate against Gmail without sending |
 
 Model service: `GET /health`, `POST /predict`, `POST /predict/batch` (up to 50
 flights, per-entry success so one bad flight cannot fail a monitoring cycle).
