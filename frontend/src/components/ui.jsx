@@ -1,4 +1,4 @@
-import { severityMeta, bandFor, bandMeta, riskColour, pct } from '../lib/risk';
+import { severityMeta, bandFor, bandMeta, riskColour, pct, signedPct } from '../lib/risk';
 
 /** The dark page shell every operations screen sits on. */
 export function Page({ title, subtitle, actions, children }) {
@@ -169,32 +169,159 @@ export function RiskGauge({ probability, thresholds, label = 'Current risk', com
   );
 }
 
-/** Why the model scored it this way — the leave-one-out attribution, ranked. */
-export function FactorList({ factors, emptyText = 'No single factor stands out.' }) {
+/**
+ * Risk contributors, ranked.
+ *
+ * The percentage is each condition's **standalone contribution**: how far it
+ * lifts risk above this same aircraft on a nominal day, measured by re-scoring
+ * with that one condition switched on. It is deliberately not a share of the
+ * total — conditions overlap, so the parts do not sum to the whole, and
+ * pretending otherwise would understate a storm sitting alongside severe
+ * turbulence.
+ *
+ * `marginal` (how much removing it right now would recover) rides along in the
+ * data and surfaces on hover, because on a saturated flight it is often near
+ * zero and that is itself the useful signal: nothing you fix alone will help.
+ */
+export function FactorList({
+  factors,
+  baseline,
+  emptyText = 'No single condition stands out — risk is driven by the overall picture.',
+}) {
   if (!factors?.length) return <p className="text-sm text-slate-500">{emptyText}</p>;
 
   const max = Math.max(...factors.map((f) => f.impact), 0.01);
 
   return (
-    <ul className="space-y-3">
-      {factors.map((f) => (
-        <li key={f.feature}>
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="font-medium text-slate-200">{f.label}</span>
-            <span className="tabular-nums text-slate-400">
-              {String(f.value)}
-              <span className="ml-2 text-xs text-slate-500">+{pct(f.impact)}</span>
+    <>
+      <ul className="space-y-4">
+        {factors.map((f) => {
+          const colour = f.impact >= 0.3 ? '#d03b3b' : f.impact >= 0.15 ? '#ec835a' : '#fab219';
+
+          return (
+            <li
+              key={f.feature}
+              title={
+                f.marginal !== undefined
+                  ? `Removing this now would change risk by ${signedPct(f.marginal)} points`
+                  : undefined
+              }
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-sm font-semibold text-slate-100">{f.label}</span>
+                  {f.detail && <span className="ml-2 text-xs text-slate-500">{f.detail}</span>}
+                </div>
+                <span className="shrink-0 text-base font-bold tabular-nums" style={{ color: colour }}>
+                  +{pct(f.impact, 0)}
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-900/80">
+                <div
+                  className="h-full rounded-full transition-[width] duration-500"
+                  style={{ width: `${Math.max((f.impact / max) * 100, 3)}%`, backgroundColor: colour }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {baseline !== null && baseline !== undefined && (
+        <p className="mt-4 border-t border-slate-700/50 pt-3 text-xs text-slate-500">
+          Measured against {pct(baseline, 0)} — what this same aircraft would carry on a nominal day.
+          Conditions overlap, so these do not add up to the total risk.
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * Recommended actions, ranked by measured effect.
+ *
+ * Every row was produced by applying that change to the flight and re-scoring
+ * it, so "92% → 88%" is a model output, not a guess. Actions that would not
+ * move the number are never shown — an advisory panel that pads itself with
+ * ineffective advice teaches operators to skip it.
+ *
+ * The combined row matters most on a badly compromised flight: when several
+ * conditions each independently hold risk high, no single action helps much and
+ * only the stack does.
+ */
+export function RecommendationList({ recommendations, combined, phase }) {
+  if (!recommendations?.length) {
+    return (
+      <p className="text-sm text-slate-500">
+        No available action would materially reduce this risk
+        {phase ? ` at the ${phase} stage` : ''}. Monitor and re-assess as conditions change.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <ol className="space-y-3">
+        {recommendations.map((r, i) => (
+          <li
+            key={r.id}
+            className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-4 py-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-[11px] font-bold text-indigo-300">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-100">{r.action}</span>
+                  <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-medium tracking-wider text-slate-500 uppercase">
+                    {r.category}
+                  </span>
+                </div>
+                <p className="mt-1.5 pl-7 text-xs leading-relaxed text-slate-400">{r.detail}</p>
+              </div>
+
+              <div className="shrink-0 text-right">
+                <div className="text-sm tabular-nums">
+                  <span className="text-slate-500">{pct(r.risk_before, 0)}</span>
+                  <span className="mx-1.5 text-slate-600" aria-hidden>→</span>
+                  <span className="font-bold" style={{ color: riskColour(r.risk_after) }}>
+                    {pct(r.risk_after, 0)}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-xs font-semibold" style={{ color: '#0ca30c' }}>
+                  −{pct(r.reduction, 0)} pts
+                </div>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      {combined && (
+        <div className="mt-4 rounded-lg border px-4 py-3" style={{ borderColor: '#0ca30c55', backgroundColor: '#0ca30c14' }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-xs font-semibold tracking-[0.12em] uppercase" style={{ color: '#0ca30c' }}>
+              All together
+            </span>
+            <span className="text-sm font-bold tabular-nums" style={{ color: riskColour(combined.risk_after) }}>
+              {pct(combined.risk_after, 0)}
+              <span className="ml-2 text-xs font-semibold" style={{ color: '#0ca30c' }}>
+                −{pct(combined.reduction, 0)} pts
+              </span>
             </span>
           </div>
-          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-900/80">
-            <div
-              className="h-full rounded-full bg-indigo-400"
-              style={{ width: `${(f.impact / max) * 100}%` }}
-            />
-          </div>
-        </li>
-      ))}
-    </ul>
+          <p className="mt-1 text-xs text-slate-400">
+            Taking {combined.actions.join(', ')} together.
+          </p>
+        </div>
+      )}
+
+      <p className="mt-4 border-t border-slate-700/50 pt-3 text-xs text-slate-500">
+        Each figure is the risk the model returns after applying that change. Advisory only —
+        the dispatcher and commander decide.
+      </p>
+    </>
   );
 }
 

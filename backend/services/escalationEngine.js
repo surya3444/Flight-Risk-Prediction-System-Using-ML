@@ -150,6 +150,7 @@ async function escalate({
   route = null,
   flightPhase = null,
   contributingFactors = [],
+  recommendations = [],
   source = 'monitor',
   settings = null,
 }) {
@@ -183,6 +184,7 @@ async function escalate({
     existing.flightPhase = flightPhase;
     existing.triggeredRules = evaluation.triggeredRules;
     existing.contributingFactors = contributingFactors;
+    existing.recommendations = recommendations;
     existing.snapshot = snapshotId || existing.snapshot;
 
     if (worsened) {
@@ -218,6 +220,7 @@ async function escalate({
     flightPhase,
     triggeredRules: evaluation.triggeredRules,
     contributingFactors,
+    recommendations,
     summary,
     source,
     updates: [

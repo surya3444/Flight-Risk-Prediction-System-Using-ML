@@ -10,6 +10,7 @@ import OpsCenter from './pages/OpsCenter';
 import FlightMonitor from './pages/FlightMonitor';
 import Incidents from './pages/Incidents';
 import AlertSettings from './pages/AlertSettings';
+import Report from './pages/Report';
 import Dashboard from './pages/Dashboard';
 import History from './pages/History';
 
@@ -34,6 +35,8 @@ function App() {
             <Route path="/assess" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/flights/:id" element={<ProtectedRoute><FlightMonitor /></ProtectedRoute>} />
             <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
+            <Route path="/reports/incident/:incidentId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
+            <Route path="/reports/flight/:flightId" element={<ProtectedRoute><Report /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute><History /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><AlertSettings /></ProtectedRoute>} />
 

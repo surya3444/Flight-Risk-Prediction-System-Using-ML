@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import api from '../services/api';
+import { resetHistory, cancel } from '../lib/voice';
 import { AuthContext } from './authContextValue';
 
 /** Returns the user claim from a token, or null if it is missing or expired. */
@@ -31,6 +32,10 @@ export const AuthProvider = ({ children }) => {
   const logout = useCallback(() => {
     localStorage.removeItem('token');
     setUser(null);
+    // Stop mid-sentence and forget what was announced, so the next operator
+    // hears current escalations rather than inheriting a silenced session.
+    cancel();
+    resetHistory();
   }, []);
 
   const login = async (email, password) => {

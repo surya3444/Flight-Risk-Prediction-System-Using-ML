@@ -35,9 +35,20 @@ function textBody(incident, { recipientRole, occName }) {
   });
 
   if (incident.contributingFactors?.length) {
-    lines.push('', 'TOP MODEL FACTORS');
+    lines.push('', 'RISK CONTRIBUTORS');
     incident.contributingFactors.forEach((f) => {
-      lines.push(`  • ${f.label}: ${f.value} (contributing ${pct(f.impact)} of current risk)`);
+      const detail = f.detail || f.value;
+      lines.push(`  • ${f.label} (${detail}) — adds ${pct(f.impact)} on its own`);
+    });
+  }
+
+  if (incident.recommendations?.length) {
+    lines.push('', 'RECOMMENDED ACTIONS (model-scored)');
+    incident.recommendations.forEach((r) => {
+      lines.push(
+        `  • ${r.action} — risk ${pct(r.risk_before)} → ${pct(r.risk_after)}`,
+        `      ${r.detail}`
+      );
     });
   }
 
@@ -79,8 +90,19 @@ function htmlBody(incident, { recipientRole, occName }) {
     .map(
       (f) =>
         `<li style="margin-bottom:6px;color:#52514e;font-size:13px">` +
-        `<strong style="color:#0b0b0b">${f.label}</strong>: ${f.value} ` +
-        `<span style="color:#898781">(${pct(f.impact)} of current risk)</span></li>`
+        `<strong style="color:#0b0b0b">${f.label}</strong> ` +
+        `<span style="color:#898781">${f.detail || f.value}</span> ` +
+        `<strong style="color:#d03b3b">+${pct(f.impact)}</strong></li>`
+    )
+    .join('');
+
+  const actions = (incident.recommendations || [])
+    .map(
+      (r) =>
+        `<li style="margin-bottom:10px;color:#52514e;font-size:13px">` +
+        `<strong style="color:#0b0b0b">${r.action}</strong> ` +
+        `<span style="color:#0ca30c;font-weight:600">${pct(r.risk_before)} &rarr; ${pct(r.risk_after)}</span>` +
+        `<br><span style="color:#898781">${r.detail}</span></li>`
     )
     .join('');
 
@@ -106,7 +128,9 @@ function htmlBody(incident, { recipientRole, occName }) {
       <h3 style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#898781;margin:26px 0 10px">Why this escalated</h3>
       <ul style="margin:0;padding-left:18px">${rules}</ul>
 
-      ${factors ? `<h3 style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#898781;margin:24px 0 10px">Top model factors</h3><ul style="margin:0;padding-left:18px">${factors}</ul>` : ''}
+      ${actions ? `<h3 style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#898781;margin:24px 0 10px">Recommended actions</h3><ul style="margin:0;padding-left:18px">${actions}</ul>` : ''}
+
+      ${factors ? `<h3 style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#898781;margin:24px 0 10px">Risk contributors</h3><ul style="margin:0;padding-left:18px">${factors}</ul>` : ''}
 
       <div style="margin-top:24px;padding:14px 16px;background:#f0efec;border-radius:8px;font-size:13px;color:#52514e;line-height:1.6">
         <strong style="color:#0b0b0b">Action:</strong> ${ROUTING[incident.severity]?.action || 'Review in the Operations Centre.'}

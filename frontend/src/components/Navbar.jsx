@@ -6,7 +6,7 @@ import { useOps } from '../context/opsContextValue';
 const LINKS = [
   { to: '/', label: 'Ops Centre' },
   { to: '/assess', label: 'Assess Flight' },
-  { to: '/incidents', label: 'Incidents' },
+  { to: '/incidents', label: 'Black Box' },
   { to: '/history', label: 'Assessment Log' },
   { to: '/settings', label: 'Alert Routing' },
 ];

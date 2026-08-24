@@ -31,6 +31,10 @@ const predictionSchema = new mongoose.Schema(
     triggeredRules: { type: Array, default: [] },
     severity: { type: String, default: 'none' },
 
+    // What the model says would actually reduce this risk, ranked.
+    recommendations: { type: Array, default: [] },
+    combinedRecommendation: { type: Object, default: null },
+
     // Set when this assessment was severe enough to raise an incident.
     incident: { type: mongoose.Schema.Types.ObjectId, ref: 'Incident', default: null },
 

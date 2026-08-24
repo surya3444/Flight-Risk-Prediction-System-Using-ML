@@ -60,6 +60,12 @@ export const settingsApi = {
   verifySmtp: () => api.post('/settings/alerts/verify-smtp').then((r) => r.data),
 };
 
+export const reportApi = {
+  /** `kind` is 'incident' or 'flight'. */
+  get: (kind, id) => api.get(`/reports/${kind}/${id}`).then((r) => r.data),
+  send: (kind, id) => api.post(`/reports/${kind}/${id}/send`).then((r) => r.data),
+};
+
 export const predictApi = {
   run: (flightData) => api.post('/predict', flightData).then((r) => r.data),
   history: () => api.get('/predict/history').then((r) => r.data),

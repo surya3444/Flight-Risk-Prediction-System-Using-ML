@@ -124,6 +124,9 @@ async function applyResult(flight, prepared, prediction, settings, now = new Dat
     riskBand: prediction.risk_band || evaluation.band,
     delta: previousProbability === null ? null : evaluation.delta,
     contributingFactors: prediction.contributing_factors || [],
+    baselineProbability: prediction.baseline_probability ?? null,
+    recommendations: prediction.recommendations || [],
+    combinedRecommendation: prediction.combined_recommendation || null,
     triggeredRules: evaluation.triggeredRules,
     severity: evaluation.severity,
     weather,
@@ -144,6 +147,7 @@ async function applyResult(flight, prepared, prediction, settings, now = new Dat
     route: `${flight.departureCity} → ${flight.arrivalCity}`,
     flightPhase: phase.phase,
     contributingFactors: prediction.contributing_factors || [],
+    recommendations: prediction.recommendations || [],
     source: 'monitor',
     settings,
   });

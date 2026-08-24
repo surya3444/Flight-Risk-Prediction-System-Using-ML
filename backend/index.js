@@ -8,6 +8,7 @@ const predictRoutes = require('./routes/predictRoutes');
 const monitorRoutes = require('./routes/monitorRoutes');
 const incidentRoutes = require('./routes/incidentRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 
 const monitorScheduler = require('./services/monitorScheduler');
 const mlClient = require('./services/mlClient');
@@ -24,6 +25,7 @@ app.use('/api/predict', predictRoutes);
 app.use('/api/monitor', monitorRoutes);
 app.use('/api/incidents', incidentRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.get('/api/health', async (req, res) => {
   res.json({

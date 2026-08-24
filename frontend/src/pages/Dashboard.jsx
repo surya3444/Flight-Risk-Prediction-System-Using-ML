@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { predictApi, errorMessage } from '../services/api';
 import { useOps } from '../context/opsContextValue';
 import StartMonitoringDialog from '../components/StartMonitoringDialog';
+import * as voice from '../lib/voice';
 import {
   Page,
   Card,
@@ -14,10 +15,11 @@ import {
   RiskGauge,
   FactorList,
   RuleList,
+  RecommendationList,
   inputClass,
   labelClass,
 } from '../components/ui';
-import { severityMeta, pct } from '../lib/risk';
+import { severityMeta, pct, spokenSeverity } from '../lib/risk';
 
 // Curated list of global and regional aviation hubs
 const CITIES = [
@@ -101,6 +103,7 @@ export default function Dashboard() {
   const [monitorOpen, setMonitorOpen] = useState(false);
 
   const [mode, setMode] = useState('simple');
+  const [flightNumber, setFlightNumber] = useState('');
   const [departureCity, setDepartureCity] = useState('');
   const [arrivalCity, setArrivalCity] = useState('');
 
@@ -178,10 +181,26 @@ export default function Dashboard() {
     try {
       const response = await predictApi.run({
         ...formData,
-        departure_city: departureCity || undefined,
-        arrival_city: arrivalCity || undefined,
+        flight_number: flightNumber.trim() || undefined,
+        departure_city: departureCity.trim() || undefined,
+        arrival_city: arrivalCity.trim() || undefined,
       });
       setResult(response);
+
+      // Announce a serious result. The submit click is itself the gesture the
+      // browser requires, so speech works on the very first assessment.
+      const assessed = response.assessment;
+      if (['emergency', 'alert'].includes(assessed?.severity)) {
+        const top = assessed.contributingFactors?.[0];
+        voice.speak(
+          `${spokenSeverity(assessed.severity)}. ` +
+            `${Math.round(response.data.predictionResult.risk_probability * 100)} percent ` +
+            `operational risk during ${formData.flight_phase}. ` +
+            (top ? `${top.label}. ` : '') +
+            'Notify airline operations immediately.'
+        );
+      }
+
       // An assessment can raise an incident, so the shared feed is now stale.
       if (response.incident) refreshOps();
     } catch (err) {
@@ -238,13 +257,19 @@ export default function Dashboard() {
             </div>
           </Card>
 
+          {/* The contributors are the answer to "why", and they sit beside the
+              number rather than below it — a bare percentage tells a dispatcher
+              nothing they can act on. */}
           <Card>
             <CardHeader
-              title="Why the model scored it this way"
-              hint="Measured by re-scoring the flight with each input set to nominal, one at a time."
+              title="Risk contributors"
+              hint="What each condition adds on its own, above a nominal day."
             />
             <div className="px-6 py-5">
-              <FactorList factors={assessment?.contributingFactors} />
+              <FactorList
+                factors={assessment?.contributingFactors}
+                baseline={assessment?.baselineProbability}
+              />
             </div>
           </Card>
 
@@ -279,41 +304,85 @@ export default function Dashboard() {
         </div>
       )}
 
+      {result && (
+        <Card className="mb-8">
+          <CardHeader
+            title="AI recommendation"
+            hint="Actions available at this stage of flight, ranked by the risk reduction the model predicts."
+          />
+          <div className="px-6 py-5">
+            <RecommendationList
+              recommendations={assessment?.recommendations}
+              combined={assessment?.combinedRecommendation}
+              phase={formData.flight_phase}
+            />
+          </div>
+        </Card>
+      )}
+
       <form onSubmit={handleSubmit}>
         <Card className="p-8 shadow-2xl">
+          {/* Flight identity is captured in both modes. It used to live inside
+              the autopilot branch, so a manual-override assessment produced an
+              advisory headed "Flight number: Not assigned". */}
+          <fieldset className="mb-8 border-b border-slate-700/50 pb-8">
+            <legend className="mb-4 flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-slate-400" aria-hidden />
+              <span className="font-semibold text-slate-200">Flight identity</span>
+              <span className="text-xs font-normal text-slate-500">
+                — used to label the advisory and any incident this raises
+              </span>
+            </legend>
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div>
+                <label className={labelClass} htmlFor="flight-number">Flight number</label>
+                <input
+                  id="flight-number"
+                  name="flight_number"
+                  value={flightNumber}
+                  onChange={(e) => setFlightNumber(e.target.value.toUpperCase())}
+                  placeholder="AI234"
+                  className={`${inputClass} mt-1`}
+                />
+              </div>
+
+              <div>
+                <label className={labelClass} htmlFor="dep-city">Departure city</label>
+                <SearchableCityInput
+                  id="dep-city"
+                  placeholder="Search city (e.g. Bengaluru)"
+                  value={departureCity}
+                  onChange={setDepartureCity}
+                  buttonNode={
+                    <button
+                      type="button"
+                      onClick={autoFillWeather}
+                      disabled={weatherLoading}
+                      title="Pull live conditions for the departure city into the environment fields"
+                      className="rounded-r-lg border border-indigo-500 bg-indigo-600 px-4 text-sm font-semibold whitespace-nowrap text-white transition-all hover:bg-indigo-500 hover:shadow-[0_0_15px_rgba(79,70,229,0.5)] disabled:opacity-60"
+                    >
+                      {weatherLoading ? 'Syncing…' : 'Sync'}
+                    </button>
+                  }
+                />
+              </div>
+
+              <div>
+                <label className={labelClass} htmlFor="arr-city">Arrival city</label>
+                <SearchableCityInput
+                  id="arr-city"
+                  placeholder="Search city (e.g. Dubai)"
+                  value={arrivalCity}
+                  onChange={setArrivalCity}
+                />
+              </div>
+            </div>
+          </fieldset>
+
           {mode === 'simple' && (
             <div className="space-y-8">
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div>
-                  <label className={labelClass} htmlFor="dep-city">Departure city</label>
-                  <SearchableCityInput
-                    id="dep-city"
-                    placeholder="Search city (e.g. Bengaluru)"
-                    value={departureCity}
-                    onChange={setDepartureCity}
-                    buttonNode={
-                      <button
-                        type="button"
-                        onClick={autoFillWeather}
-                        disabled={weatherLoading}
-                        className="rounded-r-lg border border-indigo-500 bg-indigo-600 px-6 font-semibold whitespace-nowrap text-white transition-all hover:bg-indigo-500 hover:shadow-[0_0_15px_rgba(79,70,229,0.5)] disabled:opacity-60"
-                      >
-                        {weatherLoading ? 'Syncing…' : 'Sync weather'}
-                      </button>
-                    }
-                  />
-                </div>
-
-                <div>
-                  <label className={labelClass} htmlFor="arr-city">Arrival city</label>
-                  <SearchableCityInput
-                    id="arr-city"
-                    placeholder="Search city (e.g. Dubai)"
-                    value={arrivalCity}
-                    onChange={setArrivalCity}
-                  />
-                </div>
-
                 <div>
                   <label className={labelClass} htmlFor="airline-simple">Operator</label>
                   <select id="airline-simple" name="airline" value={formData.airline} onChange={handleChange} className={`${inputClass} mt-1`}>
@@ -500,6 +569,7 @@ export default function Dashboard() {
         open={monitorOpen}
         onClose={() => setMonitorOpen(false)}
         prefill={{
+          flightNumber,
           departureCity,
           arrivalCity,
           flight_duration: formData.flight_duration,

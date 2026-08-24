@@ -14,6 +14,7 @@ import {
   RiskGauge,
   FactorList,
   RuleList,
+  RecommendationList,
   StatusDot,
 } from '../components/ui';
 import { pct, relativeTime, clockTime, riskColour, FLIGHT_STATUS, severityMeta } from '../lib/risk';
@@ -143,6 +144,12 @@ export default function FlightMonitor() {
               <Button variant="primary" onClick={() => setStatus('active')}>Resume monitoring</Button>
             )
           )}
+          <Link
+            to={`/reports/flight/${id}`}
+            className="rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-2 text-sm font-semibold text-slate-300 transition-all hover:border-slate-500 hover:text-white"
+          >
+            Advisory report
+          </Link>
           <Button variant="danger" onClick={remove}>Delete</Button>
         </>
       }
@@ -186,11 +193,14 @@ export default function FlightMonitor() {
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader
-            title="Why the model scored it this way"
-            hint="Each factor is measured by re-scoring the flight with that one input set to nominal."
+            title="Risk contributors"
+            hint="What each condition adds on its own, above a nominal day."
           />
           <div className="px-6 py-5">
-            <FactorList factors={latest?.contributingFactors} />
+            <FactorList
+              factors={latest?.contributingFactors}
+              baseline={latest?.baselineProbability}
+            />
           </div>
         </Card>
 
@@ -201,6 +211,20 @@ export default function FlightMonitor() {
           </div>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader
+          title="AI recommendation"
+          hint={`Actions still available during ${flight.currentPhase}, ranked by predicted risk reduction.`}
+        />
+        <div className="px-6 py-5">
+          <RecommendationList
+            recommendations={latest?.recommendations}
+            combined={latest?.combinedRecommendation}
+            phase={flight.currentPhase}
+          />
+        </div>
+      </Card>
 
       {latest?.weather && (
         <Card className="mt-6">

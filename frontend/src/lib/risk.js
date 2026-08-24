@@ -124,3 +124,18 @@ export const clockTime = (value) =>
   value
     ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : '—';
+
+/**
+ * How a severity should be said aloud.
+ *
+ * "Alert" spoken bare is ambiguous over a room speaker, and "Watch" sounds like
+ * an instruction rather than a level.
+ */
+export const spokenSeverity = (key) =>
+  ({
+    emergency: 'Emergency',
+    alert: 'Warning',
+    advisory: 'Advisory',
+    watch: 'Notice',
+    none: 'Nominal',
+  })[key] || 'Alert';

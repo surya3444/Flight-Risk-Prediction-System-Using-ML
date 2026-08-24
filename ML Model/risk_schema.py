@@ -88,7 +88,12 @@ BENIGN_BASELINE = {
     "weather_condition": "clear",
     "visibility_km": 10.0,
     "wind_speed_knots": 8,
-    "wind_direction": 90,
+    # No benign wind direction exists without a runway heading — 090 is not
+    # safer than 270. Excluded from attribution rather than given a fake
+    # baseline. (This is also why the UI says "Strong winds", never
+    # "Crosswind": crosswind is wind relative to the runway, and no runway
+    # heading is available.)
+    "wind_direction": None,
     "temperature_c": 20,
     "precipitation_mm": 0.0,
     "turbulence_severity": "none",
@@ -140,3 +145,139 @@ def band_for(probability):
         if probability >= floor:
             return name
     return "nominal"
+
+
+# ---------------------------------------------------------------------------
+# Condition vocabulary
+#
+# A dispatcher reads "Heavy rain", not "precipitation_mm = 18". These turn a
+# feature and its value into the phrase an operations person would actually
+# say, plus the measurement that backs it up.
+#
+# Bands are ordered worst-first; the first match wins.
+# ---------------------------------------------------------------------------
+
+CONDITION_BANDS = {
+    "precipitation_mm": [
+        (lambda v: v >= 10, "Heavy rain"),
+        (lambda v: v >= 2.5, "Moderate rain"),
+        (lambda v: v > 0, "Light precipitation"),
+    ],
+    "visibility_km": [
+        (lambda v: v < 1, "Very low visibility"),
+        (lambda v: v < 3, "Low visibility"),
+        (lambda v: v < 5, "Reduced visibility"),
+    ],
+    "wind_speed_knots": [
+        (lambda v: v >= 45, "Severe winds"),
+        (lambda v: v >= 30, "Strong winds"),
+        (lambda v: v >= 20, "Gusty winds"),
+    ],
+    "weather_condition": [
+        (lambda v: v == "storm", "Thunderstorm activity"),
+        (lambda v: v == "snow", "Snow"),
+        (lambda v: v == "rain", "Rain"),
+    ],
+    "turbulence_severity": [
+        (lambda v: v == "severe", "Severe turbulence"),
+        (lambda v: v == "moderate", "Moderate turbulence"),
+        (lambda v: v == "light", "Light turbulence"),
+    ],
+    "flight_phase": [
+        (lambda v: v in ("takeoff", "landing"), "Critical flight phase"),
+        (lambda v: v == "descent", "Descent phase"),
+    ],
+    "aircraft_age": [
+        (lambda v: v > 20, "Ageing airframe"),
+        (lambda v: v > 12, "Older airframe"),
+    ],
+    "last_maintenance_hours": [
+        (lambda v: v > 300, "Maintenance overdue"),
+        (lambda v: v > 200, "High hours since maintenance"),
+    ],
+    "engine_hours_since_overhaul": [
+        (lambda v: v > 6000, "High engine hours"),
+    ],
+    "pilot_experience": [
+        (lambda v: v < 1500, "Low captain experience"),
+        (lambda v: v < 3000, "Limited captain experience"),
+    ],
+    "copilot_experience": [
+        (lambda v: v < 1000, "Low first officer experience"),
+    ],
+    "route_complexity": [
+        (lambda v: v > 0.7, "Complex route"),
+    ],
+    "air_traffic_density": [
+        (lambda v: v > 0.7, "Dense air traffic"),
+    ],
+    "temperature_c": [
+        (lambda v: v <= -5, "Icing-risk temperatures"),
+        (lambda v: v < 0, "Sub-zero temperatures"),
+        (lambda v: v > 38, "Extreme heat"),
+    ],
+    "crew_count": [
+        (lambda v: v < 5, "Minimum crew"),
+    ],
+    "cargo_weight": [
+        (lambda v: v > 15000, "Heavy payload"),
+    ],
+    "flight_duration": [
+        (lambda v: v > 400, "Long sector"),
+    ],
+    "departure_elevation": [
+        (lambda v: v > 2000, "High-elevation departure field"),
+    ],
+    "arrival_elevation": [
+        (lambda v: v > 2000, "High-elevation arrival field"),
+    ],
+}
+
+# How to render the raw measurement beside the phrase.
+UNITS = {
+    "precipitation_mm": "{} mm/h",
+    "visibility_km": "{} km",
+    "wind_speed_knots": "{} kt",
+    "aircraft_age": "{} years old",
+    "last_maintenance_hours": "{} h since maintenance",
+    "engine_hours_since_overhaul": "{} engine h",
+    "pilot_experience": "{} h",
+    "copilot_experience": "{} h",
+    "temperature_c": "{} °C",
+    "flight_duration": "{} min",
+    "cargo_weight": "{} kg",
+    "crew_count": "{} crew",
+    "departure_elevation": "{} ft",
+    "arrival_elevation": "{} ft",
+    "route_complexity": "complexity {}",
+    "air_traffic_density": "density {}",
+}
+
+
+def describe_condition(feature, value):
+    """Returns (phrase, measurement) for one feature at one value.
+
+    Falls back to the plain feature name when the value is unremarkable — a
+    factor can still carry weight without deserving a dramatic label.
+    """
+    phrase = None
+    for test, label in CONDITION_BANDS.get(feature, []):
+        try:
+            if test(value):
+                phrase = label
+                break
+        except TypeError:
+            continue
+
+    if phrase is None:
+        phrase = FEATURE_LABELS.get(feature, feature)
+
+    template = UNITS.get(feature)
+    if template:
+        measurement = template.format(value)
+    elif isinstance(value, str):
+        measurement = value.replace("_", " ")
+    else:
+        measurement = str(value)
+
+    return phrase, measurement

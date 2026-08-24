@@ -1,1 +1,52 @@
 @import "tailwindcss";
+/* ---------------------------------------------------------------------------
+   Print rules for the operational advisory.
+   
+   The advisory is the one screen meant to leave the building on paper or as a
+   PDF, so it drops the dark operations theme entirely: ink on white, no
+   chrome, no interactive controls. Printing a dark UI wastes toner and reads
+   badly under a desk lamp.
+   --------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .print-sheet,
+  .print-sheet * {
+    background: transparent !important;
+    color: #000000 !important;
+    border-color: #999999 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Values that carry meaning keep their weight through the colour strip. */
+  .print-sheet .print-emphasis {
+    font-weight: 700 !important;
+  }
+
+  .print-sheet {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Never split a section across a page break mid-thought. */
+  .print-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

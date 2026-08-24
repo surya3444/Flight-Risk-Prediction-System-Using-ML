@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useOps } from '../context/opsContextValue';
 import { incidentApi, errorMessage } from '../services/api';
 import StartMonitoringDialog from '../components/StartMonitoringDialog';
+import { useVoiceAlerts } from '../hooks/useVoiceAlerts';
 import {
   Page,
   Card,
@@ -37,6 +38,10 @@ import {
 export default function OpsCenter() {
   const { summary, loading, error, lastUpdated, refresh, thresholds, pollSeconds } = useOps();
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Spoken escalations. Audio is a second channel for a room that is not
+  // watching the board — everything announced is already on screen.
+  const speech = useVoiceAlerts(summary?.incidents);
   const [notice, setNotice] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
@@ -79,6 +84,25 @@ export default function OpsCenter() {
           <span className="text-xs text-slate-500">
             {lastUpdated ? `Updated ${relativeTime(lastUpdated)}` : 'Awaiting first update'} · polls every {pollSeconds}s
           </span>
+          {speech.supported && (
+            <button
+              onClick={speech.toggle}
+              aria-pressed={speech.enabled}
+              title={
+                speech.enabled
+                  ? 'Emergencies and alerts are announced aloud'
+                  : 'Announce emergencies and alerts aloud'
+              }
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${
+                speech.enabled
+                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                  : 'border-slate-700 text-slate-400 hover:text-white'
+              }`}
+            >
+              <span aria-hidden>{speech.enabled ? '🔊' : '🔇'}</span>
+              Voice {speech.enabled ? 'on' : 'off'}
+            </button>
+          )}
           <Button onClick={refresh}>Refresh</Button>
           <Button variant="primary" onClick={() => setDialogOpen(true)}>Monitor a flight</Button>
         </>
@@ -86,6 +110,17 @@ export default function OpsCenter() {
     >
       {error && <Banner tone="error">{error}</Banner>}
       {notice && <Banner tone={notice.tone} onDismiss={() => setNotice(null)}>{notice.text}</Banner>}
+
+      {speech.enabled && !speech.unlocked && (
+        <Banner tone="warning">
+          <strong>Voice alerts are armed but not yet audible.</strong> Browsers block speech
+          until the page has been clicked. Click anywhere — or{' '}
+          <button onClick={speech.test} className="font-semibold underline">
+            play a test announcement
+          </button>{' '}
+          — to enable audio for this session.
+        </Banner>
+      )}
 
       {(!schedulerHealthy || !mlHealthy) && (
         <Banner tone="warning">

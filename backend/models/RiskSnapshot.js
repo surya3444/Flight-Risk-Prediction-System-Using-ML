@@ -26,6 +26,11 @@ const riskSnapshotSchema = new mongoose.Schema(
     delta: { type: Number, default: null },
 
     contributingFactors: { type: Array, default: [] },
+    // What this aircraft would score on a nominal day; the contributions
+    // above are measured as lift over this.
+    baselineProbability: { type: Number, default: null },
+    recommendations: { type: Array, default: [] },
+    combinedRecommendation: { type: Object, default: null },
     triggeredRules: { type: Array, default: [] },
     severity: { type: String, default: 'none' },
 

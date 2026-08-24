@@ -54,6 +54,9 @@ const incidentSchema = new mongoose.Schema(
 
     triggeredRules: { type: Array, default: [] },
     contributingFactors: { type: Array, default: [] },
+    // Carried onto the incident so the alert email tells the duty manager
+    // what to do, not merely that something is wrong.
+    recommendations: { type: Array, default: [] },
     summary: { type: String, required: true },
 
     source: { type: String, enum: ['monitor', 'manual-prediction'], default: 'monitor' },

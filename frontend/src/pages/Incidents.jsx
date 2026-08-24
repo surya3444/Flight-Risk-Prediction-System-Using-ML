@@ -12,6 +12,7 @@ import {
   SeverityBadge,
   RuleList,
   FactorList,
+  RecommendationList,
 } from '../components/ui';
 import { pct, relativeTime, riskColour, severityMeta } from '../lib/risk';
 
@@ -189,6 +190,14 @@ export default function Incidents() {
 
                       <div>
                         <h3 className="mb-3 text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
+                          Recommended actions
+                        </h3>
+                        <RecommendationList
+                          recommendations={incident.recommendations}
+                          phase={incident.flightPhase}
+                        />
+
+                        <h3 className="mt-6 mb-3 text-xs font-semibold tracking-[0.14em] text-slate-500 uppercase">
                           Notification trail
                         </h3>
                         <ul className="space-y-2">
@@ -292,14 +301,22 @@ export default function Incidents() {
                       </div>
                     )}
 
-                    {incident.flight && (
+                    <div className="mt-4 flex flex-wrap items-center gap-4">
                       <Link
-                        to={`/flights/${incident.flight._id || incident.flight}`}
-                        className="mt-4 inline-block text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+                        to={`/reports/incident/${incident._id}`}
+                        className="rounded-lg border border-indigo-500/50 bg-indigo-600/15 px-4 py-2 text-sm font-semibold text-indigo-300 hover:bg-indigo-600/25"
                       >
-                        View flight monitor →
+                        Generate advisory report →
                       </Link>
-                    )}
+                      {incident.flight && (
+                        <Link
+                          to={`/flights/${incident.flight._id || incident.flight}`}
+                          className="text-sm font-semibold text-indigo-400 hover:text-indigo-300"
+                        >
+                          View flight monitor →
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 )}
               </Card>

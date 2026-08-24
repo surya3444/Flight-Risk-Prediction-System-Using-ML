@@ -36,7 +36,16 @@ export default function Register() {
       await register(formData.username, formData.email, formData.password, formData.otp);
       navigate('/'); 
     } catch (err) {
-      setError(err.response?.data?.msg || 'Verification failed. Invalid or expired token.');
+      // Show what the server actually said. The old fallback claimed the code
+      // was wrong no matter what failed, which sent people round in circles
+      // re-entering a perfectly good OTP.
+      setError(
+        err.response?.data?.msg ||
+          err.response?.data?.error ||
+          (err.response
+            ? `Registration failed (${err.response.status}). Please try again.`
+            : 'Could not reach the server. Check that the API is running.')
+      );
     } finally {
       setLoading(false);
     }

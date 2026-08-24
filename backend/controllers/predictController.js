@@ -34,6 +34,7 @@ exports.createPrediction = async (req, res) => {
           : null,
       flightPhase: flightData.flight_phase,
       contributingFactors: prediction.contributing_factors || [],
+      recommendations: prediction.recommendations || [],
       source: 'manual-prediction',
       settings,
     });
@@ -49,6 +50,8 @@ exports.createPrediction = async (req, res) => {
       contributingFactors: prediction.contributing_factors || [],
       triggeredRules: evaluation.triggeredRules,
       severity: evaluation.severity,
+      recommendations: prediction.recommendations || [],
+      combinedRecommendation: prediction.combined_recommendation || null,
       incident: escalation?.incident?._id || null,
       modelVersion: prediction.model_version,
     });
@@ -61,6 +64,13 @@ exports.createPrediction = async (req, res) => {
         band: prediction.risk_band,
         triggeredRules: evaluation.triggeredRules,
         contributingFactors: prediction.contributing_factors || [],
+        // Risk this same aircraft would carry on a nominal day — the reference
+        // the standalone contributions are measured against.
+        baselineProbability: prediction.baseline_probability ?? null,
+        // Model-scored mitigations: each one was applied to the flight and
+        // re-scored, so `riskAfter` is measured, not asserted.
+        recommendations: prediction.recommendations || [],
+        combinedRecommendation: prediction.combined_recommendation || null,
       },
       incident: escalation
         ? {
